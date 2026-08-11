@@ -1,0 +1,314 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cek Tagihan PLN Kolektif</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 24px 16px;
+    color: #1a202c;
+  }
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 22px;
+    margin-bottom: 4px;
+  }
+  p.subtitle {
+    color: #666;
+    margin-top: 0;
+    margin-bottom: 20px;
+    font-size: 14px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+  }
+  label {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 6px;
+  }
+  textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 14px;
+    resize: vertical;
+  }
+  .row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  input[type="text"] {
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  input[type="file"] {
+    font-size: 14px;
+  }
+  button {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #1d4ed8; }
+  button:disabled { background: #93b4f0; cursor: not-allowed; }
+  .hint {
+    font-size: 12px;
+    color: #888;
+    margin-top: 6px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 8px;
+    border-bottom: 1px solid #eee;
+  }
+  th {
+    background: #f9fafb;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #555;
+  }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge.ok { background: #dcfce7; color: #166534; }
+  .badge.fail { background: #fee2e2; color: #991b1b; }
+  .status {
+    font-size: 14px;
+    margin-top: 10px;
+    color: #444;
+  }
+  .empty {
+    color: #999;
+    font-size: 14px;
+    padding: 20px 0;
+    text-align: center;
+  }
+  .summary {
+    font-size: 13px;
+    color: #555;
+    margin-bottom: 12px;
+  }
+  .export-btn {
+    background: #16a34a;
+    margin-left: auto;
+  }
+  .export-btn:hover { background: #15803d; }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Cek Tagihan PLN Kolektif</h1>
+  <p class="subtitle">Masukkan daftar ID Pelanggan PLN (satu baris satu nomor), atau unggah file CSV.</p>
+
+  <div class="card">
+    <label for="endpointUrl">URL Endpoint Backend</label>
+    <input type="text" id="endpointUrl" style="width:100%" placeholder="https://domain-anda.com/api/cek-kolektif" value="/api/cek-kolektif">
+    <p class="hint">Ganti sesuai alamat backend Anda yang memanggil Kiosbank (Sign On + Inquiry PLN).</p>
+
+    <div class="row">
+      <div style="flex:1; min-width:260px;">
+        <label for="idList">Daftar ID Pelanggan</label>
+        <textarea id="idList" placeholder="39121812406&#10;551600530024&#10;...."></textarea>
+        <p class="hint">Satu ID pelanggan per baris.</p>
+      </div>
+    </div>
+
+    <div class="row">
+      <label style="margin-bottom:0;">atau unggah CSV:</label>
+      <input type="file" id="csvFile" accept=".csv,.txt">
+    </div>
+
+    <div class="row">
+      <button id="submitBtn">Cek Tagihan</button>
+      <span class="status" id="statusText"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="toolbar">
+      <div class="summary" id="summaryText"></div>
+      <button class="export-btn" id="exportBtn" style="display:none;">Export CSV</button>
+    </div>
+    <div id="resultArea">
+      <div class="empty">Belum ada data. Masukkan ID pelanggan lalu klik "Cek Tagihan".</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const submitBtn = document.getElementById('submitBtn');
+  const idListEl = document.getElementById('idList');
+  const csvFileEl = document.getElementById('csvFile');
+  const endpointEl = document.getElementById('endpointUrl');
+  const statusText = document.getElementById('statusText');
+  const resultArea = document.getElementById('resultArea');
+  const summaryText = document.getElementById('summaryText');
+  const exportBtn = document.getElementById('exportBtn');
+
+  let lastResults = [];
+
+  csvFileEl.addEventListener('change', () => {
+    const file = csvFileEl.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      // ambil kolom pertama tiap baris, buang header jika bukan angka
+      const lines = text.split(/\r?\n/).map(l => l.split(',')[0].trim()).filter(Boolean);
+      const numericLines = lines.filter(l => /^\d+$/.test(l));
+      idListEl.value = numericLines.join('\n');
+    };
+    reader.readAsText(file);
+  });
+
+  function parseIDs() {
+    return idListEl.value
+      .split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+
+  function renderResults(results) {
+    if (!results.length) {
+      resultArea.innerHTML = '<div class="empty">Tidak ada hasil.</div>';
+      exportBtn.style.display = 'none';
+      return;
+    }
+
+    const sukses = results.filter(r => r.sukses).length;
+    summaryText.textContent = `Total: ${results.length} | Berhasil: ${sukses} | Gagal: ${results.length - sukses}`;
+    exportBtn.style.display = 'inline-block';
+
+    let html = '<table><thead><tr>' +
+      '<th>ID Pelanggan</th><th>Nama</th><th>Daya</th><th>Tarif</th><th>Admin Bank</th><th>Status</th>' +
+      '</tr></thead><tbody>';
+
+    for (const r of results) {
+      html += `<tr>
+        <td>${escapeHtml(r.customerID ?? '-')}</td>
+        <td>${escapeHtml(r.nama ?? '-')}</td>
+        <td>${escapeHtml(r.daya ?? '-')}</td>
+        <td>${escapeHtml(r.tarif ?? '-')}</td>
+        <td>${escapeHtml(r.adminBank ?? '-')}</td>
+        <td>${r.sukses
+          ? '<span class="badge ok">Berhasil</span>'
+          : `<span class="badge fail">Gagal${r.rc ? ' (' + escapeHtml(r.rc) + ')' : ''}</span>`}
+        </td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    resultArea.innerHTML = html;
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, s => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[s]));
+  }
+
+  submitBtn.addEventListener('click', async () => {
+    const ids = parseIDs();
+    if (ids.length === 0) {
+      statusText.textContent = 'Masukkan minimal satu ID pelanggan.';
+      return;
+    }
+
+    const endpoint = endpointEl.value.trim();
+    if (!endpoint) {
+      statusText.textContent = 'Isi URL endpoint backend terlebih dahulu.';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    statusText.textContent = `Memproses ${ids.length} ID pelanggan...`;
+    resultArea.innerHTML = '<div class="empty">Memuat...</div>';
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerIDs: ids })
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      lastResults = data.results || [];
+      renderResults(lastResults);
+      statusText.textContent = `Selesai memproses ${lastResults.length} ID pelanggan.`;
+    } catch (err) {
+      statusText.textContent = 'Gagal: ' + err.message;
+      resultArea.innerHTML = '<div class="empty">Terjadi kesalahan saat mengambil data.</div>';
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  exportBtn.addEventListener('click', () => {
+    if (!lastResults.length) return;
+    const header = ['ID Pelanggan', 'Nama', 'Daya', 'Tarif', 'Admin Bank', 'Status', 'RC'];
+    const rows = lastResults.map(r => [
+      r.customerID ?? '', r.nama ?? '', r.daya ?? '', r.tarif ?? '', r.adminBank ?? '',
+      r.sukses ? 'Berhasil' : 'Gagal', r.rc ?? ''
+    ]);
+    const csv = [header, ...rows]
+      .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'hasil-cek-tagihan-pln.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+</script>
+</body>
+</html>
